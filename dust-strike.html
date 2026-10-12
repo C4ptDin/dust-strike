@@ -23,6 +23,14 @@ button.on{border-color:var(--ac);color:var(--ac)}
 #modes button{background:var(--ac);color:#101316;border-color:var(--ac)}
 button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 #help{margin-top:8px;font-size:17px;color:#8f9aa6;text-align:center}
+#flow{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;margin-top:14px}
+#flow .row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+#flow .card{width:min(250px,44vw);padding:14px 16px;text-align:center;line-height:1.15}
+#flow .card small{display:block;margin-top:5px;font:500 15px "Rajdhani",sans-serif;color:#8f9aa6}
+#flow .card:hover,#flow .card:focus-visible{border-color:var(--ac)}
+#flow .card canvas{border:0;margin-bottom:8px;cursor:pointer}
+#flow input{font:700 22px "Rajdhani",sans-serif;background:#1c2228;color:var(--fg);border:2px solid #2c343c;padding:10px 14px;text-align:center;width:min(300px,80vw)}
+#flow .back{font-size:16px;padding:6px 18px}
 </style>
 </head>
 <body>
@@ -31,8 +39,7 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 <div id="ov">
 <h1 id="t">Dust Strike</h1>
 <p id="m">Game tactical 2D pandangan atas. Pilih peta dan mod.</p>
-<div id="maps"></div>
-<div id="modes"><button id="sp">Single player</button><button id="mp">Multiplayer online</button></div>
+<div id="flow"></div>
 <p id="st"></p>
 </div>
 </div>
@@ -103,7 +110,7 @@ function botsUpdate(dt){
 
 // multiplayer
 async function joinMP(){
- try{if(!window.claude)throw 0;const r=await claude.use('room');if(!r)throw 0;R=await r.join('ds-'+MAPS[map].n)}
+ try{if(!window.claude)throw 0;const r=await claude.use('room');if(!r)throw 0;R=await r.join('ds-'+MAPS[map].n+'-'+sel.mode)}
  catch(e){$('st').textContent='Multiplayer hanya berfungsi pada halaman yang diterbitkan dan dibuka dalam claude.ai.';return false}
  const me=()=>(peerList.find(p=>p.isMe)||{}).peer;
  R.onPeers(ch=>{peerList=ch.peers});
@@ -111,7 +118,7 @@ async function joinMP(){
  R.on('hit',m=>{const d=m.data||{};if(d.to!==me()||!P.alive||state!=='play')return;hurt(Math.min(150,+d.d||0));
   if(P.hp<=0){P.alive=false;P.dd++;P.rt=3;R.emit('kill',{by:d.by}).catch(()=>{})}});
  R.on('kill',m=>{if((m.data||{}).by===me()){P.k++;P.mo+=300}});
- P.tm=Math.random()<.5?0:1;return true}
+ P.tm=sel.team;return true}
 function respawn(){const s=spawn(P.tm);P.x=s.x;P.y=s.y;P.hp=100;P.ar=0;P.alive=true;P.buy=10;P.am=WP.map((w,i)=>P.own[i]?w.m:0);P.rs=WP.map((w,i)=>P.own[i]?w.rs:0)}
 function mpUpdate(dt){
  const ids={};
@@ -129,8 +136,6 @@ async function begin(md){
  mode=md;walls=BW.concat(MAPS[map].s);$('st').textContent='';resetPlayer();bots=[];tr=[];fx=[];round=0;
  if(md==='mp'){$('st').textContent='Menyambung...';if(!await joinMP())return;respawn()}else{startRound()}
  state='play';$('ov').style.display='none'}
-$('sp').onclick=()=>begin('sp');$('mp').onclick=()=>begin('mp');
-MAPS.forEach((m,i)=>{const b=document.createElement('button');b.textContent=m.n;b.className=i===map?'on':'';b.onclick=()=>{map=i;[...$('maps').children].forEach((e,j)=>e.className=j===i?'on':'')};$('maps').appendChild(b)});
 
 // input
 addEventListener('keydown',e=>{keys[e.code]=1;
@@ -205,6 +210,40 @@ function hud(){
 let last=performance.now();
 function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;if(state==='play')update(dt);if(state==='play'||st0++<2)draw();requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
+</script>
+<script>
+/* ===== Flow: Start > Mod > Pasukan > Peta ===== */
+const sel={name:'',mode:'classic',team:0};
+let logged=false;
+const MODES=[
+ {id:'classic',n:'5 vs 5 Classic',s:'Pasukan lawan pasukan. Kill terbanyak menang.'},
+ {id:'bomb',n:'5 vs 5 Bomb Mode',s:'Misi tanam dan lucut bom.'}];
+const TEAMS=[
+ {n:'Police',s:'Unit taktikal penguatkuasa undang-undang',c:'#4aa3ff'},
+ {n:'Thieves',s:'Sindiket rompakan bersenjata',c:'#ff9340'}];
+function el(tag,cls,txt,fn){const e=document.createElement(tag);if(cls)e.className=cls;if(txt)e.textContent=txt;if(fn)e.onclick=fn;return e}
+function card(n,s,fn,col){const b=el('button','card',n,fn);b.appendChild(el('small','',s));if(col)b.style.borderColor=col;return b}
+function preview(i){const M=MAPS[i],cv=el('canvas');cv.width=240;cv.height=160;const g=cv.getContext('2d'),k=.25;
+ g.fillStyle=M.f;g.fillRect(0,0,240,160);
+ for(const w of BW.concat(M.s)){g.fillStyle=M.w;g.fillRect(w[0]*k,w[1]*k,w[2]*k,w[3]*k);g.fillStyle=M.e;g.fillRect(w[0]*k,w[1]*k,w[2]*k,1)}
+ g.fillStyle='#4aa3ff';g.fillRect(14,76,8,8);g.fillStyle='#ff9340';g.fillRect(218,76,8,8);return cv}
+function go(step,keep){
+ const f=$('flow'),row=el('div','row');f.replaceChildren();
+ const say=(t,m)=>{if(keep)return;$('t').textContent=t;$('m').textContent=m};
+ const back=to=>f.appendChild(el('button','back','Kembali',()=>go(to)));
+ if(step===1){say('Dust Strike','Masukkan nama anda untuk bermula.');
+  const inp=el('input');inp.maxLength=16;inp.placeholder=P.name;inp.setAttribute('aria-label','Nama pemain');
+  const ok=()=>{sel.name=inp.value.trim()||P.name;P.name=sel.name;logged=true;go(2)};
+  inp.onkeydown=e=>{if(e.key==='Enter')ok()};f.append(inp,el('button','on','Start',ok))}
+ else if(step===2){say('Dust Strike','Pilih mod permainan.');
+  MODES.forEach(m=>row.appendChild(card(m.n,m.s,()=>{sel.mode=m.id;go(3)})));f.appendChild(row)}
+ else if(step===3){say('Dust Strike','Pilih pasukan anda.');
+  TEAMS.forEach((t,i)=>row.appendChild(card(t.n,t.s,()=>{sel.team=i;go(4)},t.c)));f.appendChild(row);back(2)}
+ else{say('Dust Strike',window.claude?'Pilih peta untuk masuk bilik online.':'Multiplayer hanya di claude.ai. Anda akan bermain latihan lawan bot.');
+  MAPS.forEach((m,i)=>{const c=card(m.n,'',()=>launch(i));c.prepend(preview(i));row.appendChild(c)});f.appendChild(row);back(3)}}
+async function launch(i){map=i;const on=!!window.claude;await begin(on?'mp':'sp');if(on&&state!=='play')await begin('sp')}
+const _menu=menu;menu=function(t,m){_menu(t,m);go(logged?2:1,true)};
+go(1);
 </script>
 </body>
 </html>
